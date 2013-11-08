@@ -13,10 +13,10 @@ import br.com.secoti.activerecord.exception.ActiveRecordException;
  */
 public interface IActiveRecord<T> extends Serializable {
 	
-	public List<T> find(T obj) throws ActiveRecordException;
+	public List<T> find() throws ActiveRecordException;
 	
-	public T save(T obj) throws ActiveRecordException;
+	public T save() throws ActiveRecordException;
 	
-	public T update(T obj) throws ActiveRecordException;
+	public T remove() throws ActiveRecordException;
 	
 }
