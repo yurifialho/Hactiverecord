@@ -8,55 +8,72 @@ import java.util.List;
 import java.util.Map;
 
 import javax.persistence.Column;
+import javax.persistence.EntityManager;
 import javax.persistence.Id;
-
-import org.hibernate.Query;
-import org.hibernate.Session;
+import javax.persistence.Query;
 
 import br.com.secoti.activerecord.exception.ActiveRecordException;
 
 /**
- * Implementação java do padrão ActiveRecord para hibernate
+ * Implementacao java do padrao ActiveRecord para JPA
  * 
  * @author Yuri Fialho
  * @since 08/11/2013
  * @version 0.1
  *
- * @param <T> Classe que extenderá o ActiveRecord 
+ * @param <T> Classe que extendera o ActiveRecord 
  */
 @SuppressWarnings("unchecked")
 public abstract class ActiveRecord<T> implements IActiveRecord<T>{
 
 	private static final long serialVersionUID = 1L;
-	private Session session;
+	
+	private EntityManager eManager;
 	
 	public ActiveRecord() {
-		
+		this.eManager = PersistenceConfigUtil.getInstance().getEntityManager();
 	}
 	
-	public ActiveRecord(Session session) {
-		this.session = session;
+	public ActiveRecord(String persistentUnity) {
+		this.eManager = PersistenceConfigUtil.getInstance(persistentUnity).getEntityManager();
 	}
-
+	
 	public static <T extends ActiveRecord<T>> T findById(Class<T> clazz,
-			Serializable id, Session session) throws ActiveRecordException {
+			Serializable id, String persistentUnity) throws ActiveRecordException {
+		PersistenceConfigUtil.getInstance(persistentUnity);
+		return findById(clazz, id);
+	}
+	public static <T extends ActiveRecord<T>> T findById(Class<T> clazz,
+			Serializable id) throws ActiveRecordException {
 		
-		if(clazz == null || id == null || session == null) {
-			throw new ActiveRecordException("Todos os parametros sao obrigatórios");
+		if(clazz == null || id == null ) {
+			throw new ActiveRecordException("Todos os parametros sao obrigatorios");
 		}
 		
-		T obj = (T) session.load(clazz, id);
-		if(obj != null) {
-			obj.setSession(session);
-		}
+		EntityManager manager = PersistenceConfigUtil.getInstance().getEntityManager(); 
+		
+		T obj = (T) manager.find(clazz, id);
 		return obj;
 	}
-
+	
+	public static <T extends ActiveRecord<T>> List<T> findAll(Class<T> clazz) throws ActiveRecordException {
+		EntityManager manager = PersistenceConfigUtil.getInstance().getEntityManager();
+		
+		StringBuilder hql = new StringBuilder();
+		hql.append("Select c From ").append(clazz.getName()).append(" c");
+	
+		Query query = manager.createQuery(hql.toString());
+		return query.getResultList();
+	}
+	
+	public static <T extends ActiveRecord<T>> List<T> findAll(Class<T> clazz, String persistentUnity) throws ActiveRecordException {
+		PersistenceConfigUtil.getInstance(persistentUnity);
+		
+		return findAll(clazz);
+	}
+	
 	@Override
 	public List<T> find() throws ActiveRecordException {
-		if(this.session == null) {
-			throw new ActiveRecordException("Sessao nao pode ser nula");
-		}
 		StringBuilder hql = new StringBuilder();
 			hql.append("Select c from ").append(this.getClass().getSimpleName()).append(" c");
 		StringBuilder whereClasule = null;
@@ -87,30 +104,32 @@ public abstract class ActiveRecord<T> implements IActiveRecord<T>{
 		if(whereClasule != null) {
 			hql.append(whereClasule);
 		}
-		Query query = this.session.createQuery(hql.toString());
+		Query query = this.eManager.createQuery(hql.toString());
 		if(params != null && !params.isEmpty()) {
 			for(String key : params.keySet()) {
 				query.setParameter(key, params.get(key));
 			}
 		}
-		return query.list();
+		return query.getResultList();
 	}
 	
 	@Override
 	public T save() throws ActiveRecordException {
-		if(this.session == null) {
-			throw new ActiveRecordException("Sessao nao pode ser nula");
+		this.eManager.getTransaction().begin();
+		try {
+			this.eManager.persist(this.eManager.merge(this));
+			this.eManager.flush();
+			this.eManager.getTransaction().commit();
+		} catch (Exception e) {
+			this.eManager.getTransaction().rollback();
+			throw new ActiveRecordException("Nao foi possivel salvar", e);
 		}
 		
-		this.session.saveOrUpdate(this);
 		return (T) this;
 	}
 	
 	@Override
 	public T remove() throws ActiveRecordException {
-		if(this.session == null) {
-			throw new ActiveRecordException("Sessao nao pode ser nula");
-		}
 		boolean hasId = false;
 		campos : for(Field f : this.getClass().getDeclaredFields()) {
 			for(Annotation a : f.getDeclaredAnnotations()) {
@@ -128,19 +147,17 @@ public abstract class ActiveRecord<T> implements IActiveRecord<T>{
 			}
 		}
 		if(!hasId) {
-			throw new ActiveRecordException("Id é obrigatorio para remoção do objeto");
+			throw new ActiveRecordException("Id √© obrigatorio para remo√ß√£o do objeto");
 		}
-		this.session.delete(this);
+		try {
+			this.eManager.getTransaction().begin();
+			this.eManager.remove(this.eManager.merge(this));
+			this.eManager.getTransaction().commit();
+		} catch (Exception e) {
+			this.eManager.getTransaction().rollback();
+			throw new ActiveRecordException("Nao foi possivel remover", e);
+		}
+		
 		return (T) this;
-	}
-
-	/* HIBERNATE */
-	
-	protected void setSession(Session session) {
-		this.session = session;
-	}
-	
-	protected Session getSession() {
-		return this.session;
 	}
 }
